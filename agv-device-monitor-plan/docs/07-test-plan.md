@@ -1,6 +1,6 @@
 # 07 测试与验收计划
 
-状态：T01 的 A01、T02 的 A02 及数据库约束验证已通过；A18 仅数据库并发层通过，业务告警处理仍待 T08。其余用例按下方证据表记录。
+状态：T01 的 A01、T02 的 A02 及数据库约束验证已通过；T03 的 A03、A04 解码拒绝层、A11 心跳比较层已通过。T04 的 A05/A06 服务端与 A07 单车隔离层已通过；A04/A11 的采集状态更新仍待 T06，A18 业务告警处理仍待 T08。
 
 ## 1. 测试层次
 
@@ -81,7 +81,17 @@ P0 用例可以由多个测试共同覆盖；每个 ID 都需对应证据。时�
 | A02 | PASS | Java 17、MySQL 8.4.10、Docker 29.6.2；`timeout 60s ./mvnw -B -ntp verify` | `backend/target/failsafe-reports/TEST-com.example.agv.BackendApplicationIT.xml`：空库迁移、真实应用重启、用户配置与快照保留、重复迁移不再执行 | 2026-09-13 |
 | A18（数据库层） | PASS | 同上；两个独立 JDBC 事务由 barrier 同步插入 | `concurrentInsertsLeaveOneActiveAlarmAndLoserCanReread`：一个提交成功，一个收到 1062 后回滚并重读到活动记录 | 2026-09-13 |
 | A18（业务处理） | NOT_RUN | T08 尚未实现 | 未验证业务服务的有限重试及整批采样持久化 | — |
-| A03～A17、A19～A25 | NOT_RUN | 尚未实现 | 无；T02 的局部约束证据不代替这些业务用例 | — |
+| A03 | PASS | Java 17；`timeout 60s ./mvnw -o -B -ntp test` | `backend/target/surefire-reports/TEST-com.example.agv.protocol.RegisterCodecTest.xml`；独立固定字节解码为 RUNNING、76%、1.2m/s、65535，编码另与固定字节比较 | 2026-09-13 |
+| A04（解码拒绝层） | PASS | 同上 | 版本、枚举、长度、数值范围及跨字段冲突被 IllegalArgumentException 明确拒绝；不能构造无效 DeviceSample | 2026-09-13 |
+| A04（状态/持久化层） | NOT_RUN | T06/T07 尚未实现 | INVALID 状态更新、旧业务值保留尚未通过业务运行验证 | — |
+| A11（解码与比较层） | PASS | 同上 | 解码 65535 与 0；hasNewHeartbeat 接受首次 null、回绕和不同值，拒绝把相同心跳当新观测 | 2026-09-13 |
+| A11（采集状态层） | NOT_RUN | T06 尚未实现 | 尚未验证 lastFreshAt、10 秒 STALE 与快照更新 | — |
+| A05（模拟器服务端） | PASS | Java 17、Modbus 2.1.6；`timeout 60s ./mvnw -o -B -ntp -pl simulator -am verify` | `SimulatorModbusIT`：独立JDK socket读取三个Unit，校验固定PDU、MBAP事务号/长度/Unit及部分读取 | 2026-09-13 |
+| A06（模拟器服务端） | PASS | 同上 | 写与其他不支持功能返回01，地址越界02，数量/长度非法03；未知Unit无响应，同一连接后续仍可读；空PDU关闭自身连接 | 2026-09-13 |
+| A05/A06（后端适配器） | NOT_RUN | T05 尚未实现 | 上述原始TCP探针不代替后端 DeviceClient 实现验证 | — |
+| A07（模拟器隔离层） | PASS | 同上 | 同一TCP连接先请求SILENT的2号，再读1/3号成功；HTTP管理入口仍能恢复2号，无sleep阻塞 | 2026-09-13 |
+| A07（采集调度层） | NOT_RUN | T05/T06 尚未实现 | 轮次有界、每设备in-flight与超时重试仍未验证 | — |
+| A08～A10、A12～A17、A19～A25 | NOT_RUN | 尚未实现 | 局部约束、编解码及模拟场景证据不代替采集/告警业务用例 | — |
 | B01～B07 | NOT_RUN | 尚未实现 | 无 | — |
 
 实施时按实际用例拆行。截图和报告建议放 `docs/evidence/`，仅在确实产生后引用，不提前创建虚构内容。测试账号、凭证和内网地址需脱敏。
@@ -95,3 +105,23 @@ P0 用例可以由多个测试共同覆盖；每个 ID 都需对应证据。时�
 - 验证初始化新增设备与快照的整体事务：后续连接冲突或数量超限会撤销本轮已经插入的记录。重启保留名称、enabled、revision、原连接和完整快照；种子端口变化记录明确警告。无 demo profile 时不注册初始化器。
 - 会话时区实际为 +00:00。代码使用 UTC_TIMESTAMP(3) 初始化时间；设备自身时间与后续采集时间的业务处理尚未实现。
 - 初次验证发现并修正了带标签摘要的 Testcontainers 名称解析、last_value 保留字引用，以及 CHECK 错误的 Spring 异常分类假设。最终在新的临时 MySQL 上完整重跑通过；失败尝试不计作通过证据。
+
+
+### T03 编解码层补充证据（2026-09-13）
+
+- 命令：应用根目录执行 `timeout 60s ./mvnw -o -B -ntp test`；Java 17，使用现有离线依赖，53.285 秒 BUILD SUCCESS。
+- 本轮 Surefire 共 53 个测试：后端 52 个（含 RegisterCodecTest 48 个）、模拟器 1 个，0 失败、0 错误、0 跳过。协议测试耗时 0.288 秒，报告为 `backend/target/surefire-reports/TEST-com.example.agv.protocol.RegisterCodecTest.xml`；报告为生成产物，不提交 Git。
+- 固定 fixture 同时独立验证解码字段及编码字节；覆盖速度 0/500/1200/3000、位置与目标 0/9999、故障 0/1/999/65535、心跳 0/65535、四种合法运行状态以及合法低电量 19。非法输入覆盖空值、截断/多余字节、未知版本/状态、范围与字段组合冲突；构造器同样拒绝无效输入。
+- 心跳比较验证首次 null、重复不推进、正常变化、回绕与重置；只证明比较规则，不证明 10 秒时钟阈值、状态迁移、告警时间更新或数据库写入。
+- 既有后端上下文测试出现 Netty 事件循环未在1秒内关闭的 WARN，快速测试仍正常结束。未修改相关代码；本轮没有 HTTP/Modbus TCP 或 MySQL 集成运行证据，旧 Failsafe 报告不计入本轮。
+
+
+### T04 模拟器补充证据（2026-09-13）
+
+- 最终命令：`timeout 60s ./mvnw -o -B -ntp -pl simulator -am verify`，19.676秒；21个测试，0失败/错误/跳过。SimulatedFleetTest 6个、原上下文单测1个、SimulatorApplicationIT 4个、SimulatorModbusIT 10个。
+- 当前报告：`simulator/target/surefire-reports/TEST-com.example.agv.simulator.SimulatedFleetTest.xml`、`simulator/target/failsafe-reports/TEST-com.example.agv.simulator.SimulatorApplicationIT.xml`、`simulator/target/failsafe-reports/TEST-com.example.agv.simulator.SimulatorModbusIT.xml`。仅模拟器模块及父项目参与本轮构建，不使用旧后端/Failsafe报告充数。
+- Java 17；TCP与HTTP使用真实回环随机端口，独立JDK socket检查MBAP/PDU，不Mock、不引用backend编解码；无数据库或Docker。固定三车值、部分范围、65535编码、模式变更通过实际TCP读回。
+- HTTP→内存场景→TCP完整验证 LOW_BATTERY、FAULT、INVALID、FROZEN、reset恢复；SILENT期间同连接其他Unit可读，HTTP可恢复所选Unit。正常心跳由每秒调度实际推进；FROZEN整块不变，INVALID后冻结最近有效快照。
+- 并发测试覆盖设备锁保护的内存复制及持续模式切换期间的真实TCP读取；只证明这些测试场景，非容量基准或所有调度交错的形式证明。
+- 生命周期测试验证关闭后已连接客户端EOF与端口连接失败，绑定已占用端口明确失败且原服务继续；空PDU产生预期错误日志并只关闭自身连接。非法管理JSON、模式、字段与Unit返回400。
+- 首轮19个测试通过后，复核新增空PDU/绑定冲突检查并加强并发写持续性，最终重跑21个通过。未运行完整项目verify、后端MySQL/HTTP、采集状态机或业务告警；T04已生成六种测试场景，不代表这些后端功能已实现。

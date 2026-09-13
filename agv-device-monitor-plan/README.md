@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-- 已实现 T01 骨架和 T02 数据库迁移、demo 初始化器；运行验证结果见任务交接。
+- 本地已实现 T01 骨架、T02 数据库迁移与初始化、T03 编解码及 T04 三设备模拟器；提交边界及运行证据见任务交接。
 - 已提供：开发计划、协议与接口契约、任务及验收清单；最新证据见 [任务交接](docs/06-tasks.md)。
 - 尚未实现：设备采集、业务接口、页面、告警计算和 Compose 部署。
 - 恢复会话时先看任务交接中的学习状态与待答问题；工程完成和学习通过分别判定，再进入下一任务。
@@ -50,7 +50,9 @@ timeout 60s ./mvnw test
 timeout 60s ./mvnw verify
 ```
 
-`test` 执行不依赖数据库的基础上下文、Modbus 依赖初始化及 demo 配置校验。`verify` 还启动锁定摘要的临时 MySQL，执行迁移、重启保留、唯一/范围约束、并发插入和真实 HTTP 检查，结束后自动清理测试容器；Docker 不可用时失败，不跳过后宣称通过。测试不读取个人数据库地址，容器端口仅绑定回环地址，凭据动态生成。真实 Modbus 通信仍待 T04/T05。
+`test` 执行不依赖数据库的上下文、编解码、模拟器内存状态及配置校验。完整 `verify` 还启动锁定摘要的临时 MySQL，执行迁移、重启保留、唯一/范围约束、并发插入和真实 HTTP 检查，结束后自动清理测试容器；Docker 不可用时失败，不跳过后宣称通过。测试不读取个人数据库地址，容器端口仅绑定回环地址，凭据动态生成。
+
+只构建和验证模拟器可运行 `timeout 60s ./mvnw -B -ntp -pl simulator -am verify`，不需要数据库或 Docker；包含使用临时回环端口的真实 Modbus TCP 和 HTTP 管理接口检查。后端实际采集适配器仍待 T05。
 
 后端从 T02 起必须配置专用本地 MySQL 的 `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`；没有配置会启动失败，不回退到内存数据库。应用启动会自动执行迁移，只应指向本项目库。迁移账号可通过 Spring Flyway 配置独立提供；所有凭据留在本机，不写入 Git。
 
@@ -61,14 +63,29 @@ java -jar backend/target/backend.jar --spring.profiles.active=demo
 java -jar simulator/target/simulator.jar
 ```
 
-默认仅监听回环地址，HTTP 端口分别为 8080、8081；Ctrl+C 停止。可检查进程健康：
+默认仅监听回环地址，HTTP 端口分别为 8080、8081；模拟器额外监听 Modbus TCP 1502。Ctrl+C 停止并关闭模拟器监听、客户端连接及更新线程。可检查进程健康：
 
 ```bash
 curl --max-time 5 -f http://127.0.0.1:8080/actuator/health
 curl --max-time 5 -f http://127.0.0.1:8081/actuator/health
 ```
 
-后端 `UP` 现在包含数据库连接健康检查，但仍不证明采集器或监控业务就绪；模拟器的 `UP` 仍只有基础应用证据。模拟器尚未监听 Modbus 1502，根路径尚无监控页面。
+后端 `UP` 包含数据库连接健康检查，但仍不证明采集器或监控业务就绪。模拟器启动时绑定 Modbus 端口，绑定失败使启动失败；`UP` 本身不验证每台车的采集行为，真实读验证见测试记录。根路径尚无监控页面。
+
+模拟器不依赖后端，可以单独启动。使用标准 Modbus TCP 客户端连接 `127.0.0.1:1502`，分别读取 Unit ID 1/2/3、功能码03、起始地址0、数量8。配置项为 `simulator.modbus.bind-address` 和 `simulator.modbus.port`；端口0用于测试自动分配临时端口。默认只在本机使用，Compose 的容器监听安排仍属于 T12。
+
+HTTP 管理接口仅生成模拟场景，不控制真实车辆：
+
+```bash
+curl --max-time 5 -f http://127.0.0.1:8081/sim/v1/units
+curl --max-time 5 -f -X PUT http://127.0.0.1:8081/sim/v1/units/2/scenario \
+  -H 'Content-Type: application/json' -d '{"mode":"SILENT"}'
+curl --max-time 5 -f -X PUT http://127.0.0.1:8081/sim/v1/units/2/scenario \
+  -H 'Content-Type: application/json' -d '{"mode":"NORMAL"}'
+curl --max-time 5 -f -X POST http://127.0.0.1:8081/sim/v1/reset
+```
+
+支持 `NORMAL`、`LOW_BATTERY`、`FAULT`、`SILENT`、`FROZEN`、`INVALID`。SILENT 仅抑制所选车的响应，管理接口及其他车继续工作；FROZEN 固定完整有效快照；INVALID 返回电量101。普通场景切换保留心跳，reset 恢复三台默认值并将心跳归零。1号默认电量76%，可验证低电量恢复；2号默认23%，尚未达到25%的恢复阈值。此处仅生成场景，告警服务尚未实现。
 
 `demo` profile 首次创建三台设备及 UNKNOWN 快照；没有该 profile 时只迁移结构，不生成演示设备。默认种子连接为 `simulator:1502`、Unit ID 1/2/3。IDE 调试其他地址时同时提供 `--demo.seed-host=127.0.0.1 --demo.allowed-hosts=127.0.0.1`；端口同样要在允许列表中。已有设备的名称、启停、连接和快照不会被初始化覆盖；种子连接与库中不同时记录明确警告并沿用数据库。
 
