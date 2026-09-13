@@ -1,6 +1,6 @@
 # 07 测试与验收计划
 
-状态：T01 的 A01 构建与基础冒烟验证已通过；其余验收项尚未执行。下方证据表区分实际结果与目标规范。
+状态：T01 的 A01、T02 的 A02 及数据库约束验证已通过；A18 仅数据库并发层通过，业务告警处理仍待 T08。其余用例按下方证据表记录。
 
 ## 1. 测试层次
 
@@ -78,7 +78,20 @@ P0 用例可以由多个测试共同覆盖；每个 ID 都需对应证据。时�
 | 用例 ID | 状态 | 运行环境 / 命令 | 证据路径 / 输出摘要 | 日期 |
 | --- | --- | --- | --- | --- |
 | A01 | PASS | Java 17.0.20；`timeout 60s ./mvnw verify` | 两模块 `target/surefire-reports/` 和 `target/failsafe-reports/`；详见 T01 交接 | 2026-09-11 |
-| A02～A25 | NOT_RUN | 尚未实现 | 无 | — |
+| A02 | PASS | Java 17、MySQL 8.4.10、Docker 29.6.2；`timeout 60s ./mvnw -B -ntp verify` | `backend/target/failsafe-reports/TEST-com.example.agv.BackendApplicationIT.xml`：空库迁移、真实应用重启、用户配置与快照保留、重复迁移不再执行 | 2026-09-13 |
+| A18（数据库层） | PASS | 同上；两个独立 JDBC 事务由 barrier 同步插入 | `concurrentInsertsLeaveOneActiveAlarmAndLoserCanReread`：一个提交成功，一个收到 1062 后回滚并重读到活动记录 | 2026-09-13 |
+| A18（业务处理） | NOT_RUN | T08 尚未实现 | 未验证业务服务的有限重试及整批采样持久化 | — |
+| A03～A17、A19～A25 | NOT_RUN | 尚未实现 | 无；T02 的局部约束证据不代替这些业务用例 | — |
 | B01～B07 | NOT_RUN | 尚未实现 | 无 | — |
 
 实施时按实际用例拆行。截图和报告建议放 `docs/evidence/`，仅在确实产生后引用，不提前创建虚构内容。测试账号、凭证和内网地址需脱敏。
+
+### T02 数据库层补充证据（2026-09-13）
+
+- 最终命令：`timeout 60s ./mvnw -B -ntp verify`，总耗时 37.135 秒；14 个测试，0 失败、0 错误、0 跳过。后端快速测试 4 个、MySQL/HTTP IT 8 个，模拟器快速/HTTP 测试各 1 个；报告位于各模块 target 下，不提交生成报告。
+- 固定 MySQL 摘要，Testcontainers 2.0.5 创建专用 agv_t02_test 数据库，动态生成非 root 应用账号与密码；数据库端口只绑定 127.0.0.1。数据源和 Flyway 参数均显式指向该容器；不使用个人库或可复用容器。结束后按测试标签确认没有残留 MySQL 容器，对应 Ryuk 也已移除。
+- 验证设备编码/连接唯一、外键限制及未知快照；数值范围与枚举大小写；同一 sample_key 不重复；历史故障码与状态一致。
+- 验证多个 RECOVERED/NULL 历史和不同规则的活动告警共存，同规则活动告警重复被拒；ACTIVE 的 NULL/0 槽位被拒，关闭字段一致性与 SUPPRESSED 不伪造恢复时间。
+- 验证初始化新增设备与快照的整体事务：后续连接冲突或数量超限会撤销本轮已经插入的记录。重启保留名称、enabled、revision、原连接和完整快照；种子端口变化记录明确警告。无 demo profile 时不注册初始化器。
+- 会话时区实际为 +00:00。代码使用 UTC_TIMESTAMP(3) 初始化时间；设备自身时间与后续采集时间的业务处理尚未实现。
+- 初次验证发现并修正了带标签摘要的 Testcontainers 名称解析、last_value 保留字引用，以及 CHECK 错误的 Spring 异常分类假设。最终在新的临时 MySQL 上完整重跑通过；失败尝试不计作通过证据。

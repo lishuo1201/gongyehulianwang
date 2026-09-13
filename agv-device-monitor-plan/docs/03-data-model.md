@@ -1,11 +1,11 @@
 # 03 数据模型
 
-状态：逻辑设计，建表 SQL 由 T02 生成并在 MySQL 验证。类型和索引变更同步本文件。
+状态：T02 已提供 [V1 迁移](../backend/src/main/resources/db/migration/V1__create_monitor_tables.sql)，运行证据见 [测试计划](07-test-plan.md)。类型和索引变更同步本文件；采集与告警业务尚未实现。
 
 ## 1. 统一约定
 
-- 数据库：MySQL，目标系列 8.4；确切镜像版本由 T01 验证后锁定。
-- 字符集 utf8mb4。编码/规则使用固定 ASCII 大写；唯一值校验与数据库排序规则一致。
+- 数据库：MySQL 8.4.10，镜像摘要见设计决策；测试使用该摘要的专用临时容器。
+- 表字符集 utf8mb4、排序规则 utf8mb4_0900_bin；编码、枚举和规则使用 ascii_bin，区分大小写。设备编码有大写与非空约束，应用需采用相同校验规则。
 - 主键 `BIGINT` 自增；JSON 返回所有 ID 为字符串，避免 JavaScript 大整数精度问题。
 - 时间列 `DATETIME(3)`，数据库连接和应用持久化均按 UTC；API ISO 8601 `Z`。
 - 状态列采用 `VARCHAR`，由应用枚举、校验及迁移约束保证取值，不依赖数据库 ENUM。
@@ -95,7 +95,7 @@
 | status | VARCHAR(16) | ACTIVE / RECOVERED / SUPPRESSED |
 | active_slot | TINYINT | ACTIVE 必须为 1，其余必须为 NULL |
 | trigger_value | VARCHAR(64) | 触发时的电量、故障码或超时描述 |
-| last_value | VARCHAR(64) | 最近异常观测值 |
+| last_value | VARCHAR(64) | 最近异常观测值；MySQL 保留字，SQL 中须使用反引号引用 |
 | triggered_at | DATETIME(3) | 第一次触发 |
 | last_observed_at | DATETIME(3) | 最近满足触发/持续条件的观测 |
 | acknowledged_at | DATETIME(3) | 可空，首次确认时间 |
@@ -107,7 +107,7 @@
 
 补充索引：`idx_alarm_device_time(device_id, triggered_at, id)`、`idx_alarm_status_time(status, triggered_at, id)`。
 
-加 CHECK 或同等数据库约束保证 ACTIVE 对应 active_slot=1，其他状态对应 NULL；应用同时校验。确认不修改 active_slot。停用设备必须在同一事务中更新快照并关闭其活动槽。
+V1 CHECK 显式保证 ACTIVE 对应非空 active_slot=1，其他状态对应 NULL，避免 MySQL CHECK 的 UNKNOWN 语义绕过约束。另校验规则/严重级别、恢复与关闭字段及时间顺序；应用判定与事务处理待 T08。确认不修改 active_slot。停用设备必须在同一事务中更新快照并关闭其活动槽。
 
 ## 7. 写入与查询约束
 
@@ -125,3 +125,13 @@
 - 种子通过 demo profile 的幂等初始化器生成，不能把特定环境 host 硬编码进不可变通用迁移。
 - 业务代码使用应用账号，迁移账号权限按实际环境配置；不要在仓库写真实密码。
 - 后续结构变更新建 V2、V3，不修改已经落地的 V1。
+
+## 9. T02 已落实的初始化边界
+
+- `DemoInitializer` 仅在 demo profile 生效，等 Flyway 迁移完成后执行；台账与未知快照在同一短事务初始化。
+- 按 device_code 查询时包含停用设备；已有记录不覆盖名称、enabled、连接、revision、时间或快照。种子连接不一致时明确警告，数据库连接配置优先。
+- 缺失设备才插入；连接被其他编码占用或登记数量超限时抛出错误并回滚整批初始化，不吞异常或覆盖其他车辆。
+- `DemoProperties` 在写库前验证 seed-host/seed-port 的允许列表与范围；默认值位于 application-demo.properties。host 允许列表属于应用配置，数据库只约束非空与连接唯一。
+- V1 为五表提供外键、枚举/数值范围和索引；历史样本还约束故障码与运行状态一致，状态事件拒绝新旧值相同。应用 API 的校验/不可修改连接入口留待 T09；数据库迁移本身不承诺阻止管理员直接改连接列。
+- JDBC 连接使用 UTC 会话与时区设置，初始化写 UTC_TIMESTAMP(3)；业务时间仍须在后续采集任务中按协议语义产生。
+- 测试直接核对 MySQL 唯一约束错误 1062、外键错误 1451/1452、CHECK 错误 3819；本版 JDBC/Spring 组合可能将 CHECK 违规映射为 UncategorizedSQLException，不能仅靠异常类名判断已正确拦截。
