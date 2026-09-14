@@ -8,7 +8,8 @@ import org.springframework.context.ApplicationContext;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        useMainMethod = SpringBootTest.UseMainMethod.ALWAYS)
+        useMainMethod = SpringBootTest.UseMainMethod.ALWAYS,
+        properties = "management.endpoint.health.group.readiness.include=readinessState")
 class SimulatorApplicationTest {
 
     @Autowired

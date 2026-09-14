@@ -46,6 +46,8 @@ class SimulatorApplicationIT {
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode());
         assertEquals("UP", jsonMapper.readTree(response.body()).path("status").asString());
+        assertEquals(200, request("GET", "/actuator/health/readiness", "").statusCode());
+        assertEquals(200, request("GET", "/actuator/health/liveness", "").statusCode());
     }
 
     @Test

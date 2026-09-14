@@ -14,6 +14,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+/**
+ * Seed missing devices：T02，Flyway迁移之后、监控ApplicationReadyEvent之前，补齐三台演示台账。
+ * 只有demo profile启用此初始化器；它不会启动Modbus模拟器，也不把默认电量写成真实测量。
+ * <p>Database wins：设备已存在时保留名称、启停和连接元组，配置文件改动不能覆盖业务维护结果。
+ * 初始deviceCode按Unit ID生成只是方便演示，不意味着后续可以靠编码末尾数字推断实际读取目标。
+ * Evidence：BackendApplicationIT验证空库、重启、约束及旧配置保留。
+ */
 @Component
 @Profile("demo")
 @DependsOnDatabaseInitialization
@@ -50,6 +57,7 @@ public class DemoInitializer implements ApplicationRunner {
                                 code, stored.host(), stored.port(), stored.unit(),
                                 properties.seedHost(), properties.seedPort(), unit);
                     }
+                    // Do not reset on startup：无论连接是否与种子相同，已有台账都直接保留，不能重置enabled/name。
                     continue;
                 }
                 if (jdbc.queryForObject("SELECT COUNT(*) FROM device", Long.class) >= properties.maxDevices()) {

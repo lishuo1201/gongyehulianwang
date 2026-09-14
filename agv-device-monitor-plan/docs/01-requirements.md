@@ -1,6 +1,6 @@
 # 01 需求与验收边界
 
-状态：设计基线，待实现。所有阈值都是本地 Demo 的约定，不是行业标准。
+状态：P0/P1代码及工程验收已完成；准确证据和学习进度见[任务交接](06-tasks.md)。所有阈值都是本地 Demo 的约定，不是行业标准。
 
 ## 1. 项目目标
 
@@ -64,7 +64,7 @@ PLC/网关/SCADA、OPC UA/MQTT/VDA 5050、MES/WMS、控制及调度协作作为�
 | `device.stale-ms` | 10000 | 心跳无推进的数据陈旧阈值 |
 | `device.watchdog-ms` | 1000 | 独立健康扫描周期 |
 | `history.interval-ms` | 10000 | 正常历史采样最小间隔 |
-| `history.retention-days` | 7 | 采样历史保留目标；自动清理在 P1 |
+| `history.retention-days` | 7 | 每日清理早于保留截止时间的采样；每批最多1000行 |
 | `alarm.battery-trigger-below` | 20 | 电量严格小于 20% 触发 |
 | `alarm.battery-recover-at-least` | 25 | 电量大于等于 25% 恢复，避免抖动 |
 | `sse.heartbeat-ms` | 15000 | 浏览器 SSE 保活，与设备心跳不同 |
@@ -96,9 +96,11 @@ PLC/网关/SCADA、OPC UA/MQTT/VDA 5050、MES/WMS、控制及调度协作作为�
 | LOW_BATTERY | 新的 GOOD 样本电量 < 20 | 新的 GOOD 样本电量 >= 25 |
 | DEVICE_FAULT | 新的 GOOD 样本故障码 != 0 | 新的 GOOD 样本故障码 = 0 |
 | DEVICE_OFFLINE | 通信健康扫描判断 OFFLINE | 收到有效 Modbus 正常响应 |
-| DATA_STALE（P1） | 在线但心跳连续 10 秒无推进 | 新的有效样本使心跳推进 |
+| DATA_STALE（P1） | ONLINE、STALE，且最近合法响应重复已提交的心跳，距最后有效样本至少10秒 | 新的GOOD样本成功提交；重启后首次有效样本也重新建立基准 |
 
 GOOD 样本的故障码与运行状态须一致，详见寄存器表。无可信新样本时不自动恢复低电量和故障告警。
+
+DATA_STALE为WARNING；INVALID、OFFLINE和加载重启旧值均不单独触发或恢复该告警。数据库保存失败时的新心跳也不算设备心跳冻结；保持已有告警，等待新的有效提交。确认只记录知悉，停用仍按统一规则抑制。
 
 同一设备同一规则只存在一个未恢复事件；持续异常更新最近观测时间，不持续插新记录。用户确认只记录知悉，不把故障改成正常。停用设备将未恢复告警标记为 SUPPRESSED，而非正常 RECOVERED。
 

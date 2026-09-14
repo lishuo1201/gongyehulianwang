@@ -107,7 +107,7 @@
 
 补充索引：`idx_alarm_device_time(device_id, triggered_at, id)`、`idx_alarm_status_time(status, triggered_at, id)`。
 
-V1 CHECK 显式保证 ACTIVE 对应非空 active_slot=1，其他状态对应 NULL，避免 MySQL CHECK 的 UNKNOWN 语义绕过约束。另校验规则/严重级别、恢复与关闭字段及时间顺序；应用判定与事务处理待 T08。确认不修改 active_slot。停用设备必须在同一事务中更新快照并关闭其活动槽。
+V1 CHECK 显式保证 ACTIVE 对应非空 active_slot=1，其他状态对应 NULL，避免 MySQL CHECK 的 UNKNOWN 语义绕过约束。另校验规则/严重级别、恢复与关闭字段及时间顺序；应用判定与事务处理已在T08实现，P1复用同一结构处理DATA_STALE。确认不修改 active_slot。停用设备必须在同一事务中更新快照并关闭其活动槽。
 
 ## 7. 写入与查询约束
 
@@ -132,6 +132,6 @@ V1 CHECK 显式保证 ACTIVE 对应非空 active_slot=1，其他状态对应 NUL
 - 按 device_code 查询时包含停用设备；已有记录不覆盖名称、enabled、连接、revision、时间或快照。种子连接不一致时明确警告，数据库连接配置优先。
 - 缺失设备才插入；连接被其他编码占用或登记数量超限时抛出错误并回滚整批初始化，不吞异常或覆盖其他车辆。
 - `DemoProperties` 在写库前验证 seed-host/seed-port 的允许列表与范围；默认值位于 application-demo.properties。host 允许列表属于应用配置，数据库只约束非空与连接唯一。
-- V1 为五表提供外键、枚举/数值范围和索引；历史样本还约束故障码与运行状态一致，状态事件拒绝新旧值相同。应用 API 的校验/不可修改连接入口留待 T09；数据库迁移本身不承诺阻止管理员直接改连接列。
+- V1 为五表提供外键、枚举/数值范围和索引；历史样本还约束故障码与运行状态一致，状态事件拒绝新旧值相同。应用API在T09实现校验并拒绝修改连接元组；数据库迁移本身不承诺阻止管理员直接改连接列。
 - JDBC 连接使用 UTC 会话与时区设置，初始化写 UTC_TIMESTAMP(3)；业务时间仍须在后续采集任务中按协议语义产生。
 - 测试直接核对 MySQL 唯一约束错误 1062、外键错误 1451/1452、CHECK 错误 3819；本版 JDBC/Spring 组合可能将 CHECK 违规映射为 UncategorizedSQLException，不能仅靠异常类名判断已正确拦截。

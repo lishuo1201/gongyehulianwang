@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import com.digitalpetri.modbus.exceptions.UnknownUnitIdException;
@@ -16,6 +17,7 @@ import com.digitalpetri.modbus.server.RawModbusTcpRequest;
 import com.digitalpetri.modbus.server.RawModbusTcpResponse;
 import com.digitalpetri.modbus.server.RawModbusTcpServices;
 import com.digitalpetri.modbus.tcp.server.NettyTcpServerTransport;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -25,12 +27,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.stereotype.Component;
 
-/** Protocol boundary: 库处理 TCP/MBAP；此处实现只读功能码03及模拟场景，不依赖 backend。 */
+/**
+ * Protocol boundary：T04/T05/T12，库处理TCP拆包、MBAP头与响应关联，本类实现功能码03的寄存器切片。
+ * request.unitId选择SimulatedFleet中的车辆，不使用HTTP路径或deviceCode；共享监听端口不能因单车掉线而关闭。
+ * <p>Separate clocks and I/O：独立ticker每秒更新内存，requests处理协议，Netty负责通道事件。
+ * 请求处理拿到Unit快照副本后即释放设备锁，再编码和发送；不能等客户端收完网络响应才放锁。
+ * 只读范围由功能码限制：不会实现写寄存器、任务下发或真实车辆控制。
+ */
 @Component
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseable {
+public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseable, HealthIndicator {
     private static final Logger log = LoggerFactory.getLogger(SimulatorModbusServer.class);
     private final SimulatedFleet fleet;
     private final String address;
@@ -40,6 +50,9 @@ public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseabl
     private ExecutorService requests;
     private ScheduledExecutorService ticker;
     private ModbusTcpServer server;
+    private volatile Channel listener;
+    private volatile ScheduledFuture<?> updates;
+    private volatile boolean stopping;
 
     public SimulatorModbusServer(SimulatedFleet fleet,
             @Value("${simulator.modbus.bind-address}") String address,
@@ -66,6 +79,7 @@ public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseabl
                         @Override
                         public void channelActive(ChannelHandlerContext context) throws Exception {
                             // Discover an ephemeral port: 测试直接绑定0，避免先找空闲端口再绑定的竞争。
+                            listener = context.channel();
                             boundPort.complete(((InetSocketAddress) context.channel().localAddress()).getPort());
                             super.channelActive(context);
                         }
@@ -73,7 +87,7 @@ public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseabl
             server = ModbusTcpServer.create(transport, this);
             server.start();
             log.info("Simulator Modbus listening on {}:{}", address, port());
-            ticker.scheduleAtFixedRate(() -> {
+            updates = ticker.scheduleAtFixedRate(() -> {
                 try {
                     fleet.tick();
                 } catch (RuntimeException failure) {
@@ -92,10 +106,24 @@ public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseabl
         }
     }
 
+    @Override
+    public Health health() {
+        // Check real lifecycle: 只有监听活跃且更新任务仍在运行时，模拟器才就绪。
+        Channel current = listener;
+        ScheduledFuture<?> task = updates;
+        return !stopping && current != null && current.isActive() && task != null && !task.isDone()
+                ? Health.up().build() : Health.down().build();
+    }
+
     public int port() throws Exception {
         return boundPort.get(5, TimeUnit.SECONDS);
     }
 
+    /**
+     * Serve one read：先选车并取得一致副本，再校验PDU结构、功能码、起始地址和数量。
+     * SILENT直接停止该请求的响应流程，不sleep共享请求线程、不返回全零、不关闭整个服务。
+     * 错误区分：异常码1为不支持功能，2为地址越界，3为请求长度/数量非法；正常数据仍按大端uint16编码。
+     */
     @Override
     public Optional<RawModbusTcpResponse> handleRawTcpRequest(ModbusTcpRequestContext context,
                                                             RawModbusTcpRequest request) throws Exception {
@@ -127,6 +155,7 @@ public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseabl
         if (count < 1 || count > 125) {
             return exception(function, 3);
         }
+        // Zero-based range：合法块的索引为0～7，读取范围是[start,start+count)，不是文档中的40001编号。
         if (start + count > 8) {
             return exception(function, 2);
         }
@@ -138,6 +167,7 @@ public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseabl
         return Optional.of(new RawModbusTcpResponse(output.array()));
     }
 
+    // Modbus exception response：响应功能码设置最高位，再附异常码；这不是有效业务寄存器数据。
     private static Optional<RawModbusTcpResponse> exception(int function, int code) {
         return Optional.of(new RawModbusTcpResponse(new byte[] {(byte) (function | 0x80), (byte) code}));
     }
@@ -145,6 +175,7 @@ public class SimulatorModbusServer implements RawModbusTcpServices, AutoCloseabl
     @PreDestroy
     @Override
     public void close() throws Exception {
+        stopping = true;
         if (ticker != null) {
             ticker.shutdownNow();
         }

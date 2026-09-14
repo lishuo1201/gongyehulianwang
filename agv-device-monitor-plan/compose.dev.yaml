@@ -1,0 +1,8 @@
+services:
+  mysql:
+    ports:
+      - "127.0.0.1:${AGV_MYSQL_PORT:-3307}:3306"
+  simulator:
+    ports:
+      - "127.0.0.1:${AGV_SIM_HTTP_PORT:-8081}:8081"
+      - "127.0.0.1:${AGV_MODBUS_PORT:-1502}:1502"

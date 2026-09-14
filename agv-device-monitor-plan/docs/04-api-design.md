@@ -1,6 +1,8 @@
 # 04 REST / SSE / 模拟器接口契约
 
-状态：待实现。P0 使用同源页面和后端，API 前缀 `/api/v1`；不添加跨域通配配置。
+状态：后端REST/SSE已实现并通过真实HTTP集成验证，完成范围见 [任务交接](06-tasks.md) 和 [验收证据](07-test-plan.md)。使用同源页面和后端，API 前缀 `/api/v1`；不添加跨域通配配置。
+
+运维诊断另使用 `/actuator/health/liveness`、`/actuator/health/readiness` 和 `/actuator/metrics/{name}`，不属于业务分页接口；指标语义及示例见[部署指南](08-deployment.md)。DATA_STALE沿用告警接口和ruleCode筛选，未增加新的业务路由。
 
 ## 1. 通用格式
 
@@ -17,7 +19,7 @@
 
 HTTP：400 参数非法、404 资源不存在、409 唯一冲突/容量限制、503 依赖不可用、500 未分类错误。不能把所有错误改为 HTTP 200。响应不包含堆栈、密码或连接串。
 
-所有 ID 使用字符串；时间使用 ISO 8601 UTC；速度字段单位 m/s；无可信数据用 null。列表固定排序，page 从 1 开始，size 默认 20、最大 100，返回 `items/page/size/total`。
+资源 id/deviceId 和 configRevision/snapshotRevision 使用字符串；协议地址 unitId 使用整数，与登记请求一致；时间使用 ISO 8601 UTC；速度字段单位 m/s；无可信数据用 null。列表固定排序，page 从 1 开始，size 默认 20、最大 100，返回 `items/page/size/total`。
 
 ## 2. 设备接口
 

@@ -204,10 +204,12 @@ class SimulatorModbusIT {
 
     @Test
     void closesActiveConnectionsAndReleasesTheListeningPort() throws Exception {
+        assertEquals("UP", server.health().getStatus().getCode());
         int port = server.port();
         try (var client = new WireClient(port)) {
             client.read(1);
             server.close();
+            assertEquals("DOWN", server.health().getStatus().getCode());
             assertEquals(-1, client.input.read());
             try (var probe = new Socket()) {
                 assertThrows(IOException.class, () -> probe.connect(new InetSocketAddress("127.0.0.1", port), 500));

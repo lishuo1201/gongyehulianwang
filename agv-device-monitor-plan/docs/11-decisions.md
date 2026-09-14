@@ -28,7 +28,7 @@
 
 | 组件 | 计划基线 / 候选 | 文档核对情况 | 本项目实测状态 |
 | --- | --- | --- | --- |
-| JDK | Ubuntu OpenJDK `17.0.20+8-1-24.04-Ubuntu` | `java -version`、`javac -version` | 两模块以 `release 17` 编译；字节码 major 61；容器 JDK 尚未选择 |
+| JDK | 本机 Ubuntu OpenJDK `17.0.20+8-1-24.04-Ubuntu`；容器 Temurin Java17 | `java -version`、`javac -version`、Dockerfile摘要 | 两模块以 `release 17` 编译；容器运行JRE实测 `Temurin-17.0.20+8`；构建JDK按下方摘要锁定 |
 | Spring Boot | `4.1.1` | 官方要求 Java 17+；父 POM 固定版本 | 两模块上下文、HTTP 和 JAR 启动通过 |
 | Spring Framework / Tomcat | `7.0.9` / `11.0.24` | Boot BOM 及测试实际 classpath | 已用于本轮 HTTP 测试 |
 | Maven / Wrapper | Maven `3.9.11` / Wrapper `3.3.4` | Apache 官方 only-script 分发；Maven ZIP 校验 SHA-512 | `./mvnw -version`、构建通过；项目记录分发包 SHA-256 |
@@ -44,6 +44,13 @@
 MySQL 后续测试/部署使用已核对的不可变引用：`mysql:8.4.10@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6`。T02 已用该摘要完成临时数据库验证。Testcontainers 中采用 `mysql@sha256:…` 的等价引用，避免标签与摘要同时出现时的名称解析问题；完整摘要见测试源码。
 
 本机系统 Maven 为 `3.8.7`；本项目以 `./mvnw` 的 `3.9.11` 为准。保留官方 `mvnw`、`mvnw.cmd`，仅统一 LF；本轮验证 WSL/Bash，未执行 Windows CMD。
+
+T12 镜像锁定（2026-09-14）：两个Java镜像均已实际拉取，多阶段构建通过；运行镜像内 `java -version` 已核对。完整部署验收见 docs/07-test-plan.md。
+
+- 构建：`eclipse-temurin:17-jdk-jammy@sha256:ef4374b4b6b9d813dd3f5b593a35ec9a820cfb64a55994798147cc73435a0208`。
+- 运行：`eclipse-temurin:17-jre-jammy@sha256:ec72ba5962b45ae4e7f96bfb5ebf6eeb34a488b967f937c8e14f0aaec688954f`。
+- MySQL：`mysql:8.4.10@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6`。
+- 构建镜像安装unzip，以免Wrapper将ZIP地址改成tar.gz后仍比较ZIP校验值；原Maven ZIP已匹配Apache SHA-512与项目SHA-256，不跳过完整性检查。运行镜像不安装curl，使用JRE自带HTTP能力探测readiness。
 
 T01 的 Modbus 检查不绑定端口、不读写寄存器。维护者超时文档说明：连接超时与请求超时分开，响应 promise 超时不保证底层发送或等待被取消；库还可能自行重连。T05 必须针对本版本实测总预算、停止重连和资源释放，不能将初始化通过当作协议验收。不要混用旧版本教程中的包名、Netty 设置或方法签名。
 

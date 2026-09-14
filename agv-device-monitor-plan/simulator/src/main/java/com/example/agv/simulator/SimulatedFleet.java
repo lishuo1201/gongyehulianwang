@@ -4,7 +4,14 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
-/** In-memory devices: 三台模拟车各有自己的锁、场景、心跳和最近有效快照，不使用数据库。 */
+/**
+ * In-memory devices：T04，三台车各自持有场景、心跳、八寄存器与最近合法样本，不使用SQL维护模拟状态。
+ * <p>Keep a coherent block：同车tick、切场景和snapshot使用同一把Unit锁；读取完整副本后立即释放。
+ * 保证的是一台车的一组寄存器一致，不保证对三台车的列表查询都来自同一物理时刻。
+ * <p>Scenario semantics：SILENT只影响协议是否响应，内存心跳仍推进；FROZEN停止整块更新；
+ * INVALID继续心跳但给出电量101，让后端验证“通信正常但业务无效”，不能在后端放宽合法性校验。
+ * Evidence：SimulatedFleetTest验证本车快照，SimulatorModbusIT验证真实线上响应和单车隔离。
+ */
 @Component
 public class SimulatedFleet {
     public enum Scenario { NORMAL, LOW_BATTERY, FAULT, SILENT, FROZEN, INVALID }
@@ -62,6 +69,11 @@ public class SimulatedFleet {
             return new Snapshot(id, mode, registers.clone());
         }
 
+        /**
+         * Change one experiment：FROZEN使用最近合法整组样本，不能只冻结heartbeat或沿用非法101电量。
+         * 切其他场景从该车默认值重建并应用目标场景，保留内部心跳计数；只有reset归零。
+         * NORMAL把1号电量恢复为76是模拟场景的明确约定，不是工业监控后端可随意修改设备值。
+         */
         synchronized Snapshot change(Scenario next) {
             if (next == Scenario.FROZEN) {
                 // Freeze valid history: INVALID 的101不能污染用于冻结的最近有效快照。
@@ -88,6 +100,8 @@ public class SimulatedFleet {
             return snapshot();
         }
 
+        // Advance the device clock：一个tick推进一次16位心跳；65535之后回绕0，不是掉线或非法值。
+        // SILENT still ticks：失去响应不等于设备内部停止工作，HTTP仍可切回正常场景。
         synchronized void tick() {
             if (mode == Scenario.FROZEN) {
                 return;
@@ -109,6 +123,8 @@ public class SimulatedFleet {
             lastValid = registers.clone();
         }
 
+        // Follow the point map：版本、运行状态、电量、mm/s速度、位置、目标、故障、心跳，顺序不可随意交换。
+        // Battery hysteresis fixture：2号默认23未达到25恢复阈值；演示低电量恢复优先使用默认76的1号。
         private int[] defaults() {
             return switch (id) {
                 case 1 -> new int[] {1, 1, 76, 1200, 3, 7, 0, 0};

@@ -78,6 +78,7 @@ class BackendApplicationIT {
     private static ConfigurableApplicationContext start(String profile, int seedPort) {
         // Override ambient settings: 测试连接参数使用应用参数最高优先级，防止误连个人数据库。
         return new SpringApplicationBuilder(BackendApplication.class).run(
+                "--monitor.enabled=false", "--management.endpoint.health.group.readiness.include=readinessState,db",
                 "--server.port=0", "--server.address=127.0.0.1", "--spring.profiles.active=" + profile,
                 "--spring.datasource.url=" + MYSQL.getJdbcUrl(),
                 "--spring.datasource.username=" + MYSQL.getUsername(),

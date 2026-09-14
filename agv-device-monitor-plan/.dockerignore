@@ -1,0 +1,11 @@
+**/target
+**/.git
+**/.idea
+**/*.iml
+**/.env
+**/.env.*
+**/*.log
+docs
+scripts/browser-check.js
+
+**/__pycache__

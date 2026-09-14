@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
+    <title>AGV 设备监控台</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/monitor.css">
+    <script src="/monitor.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到监控内容</a>
+<aside class="rail">
+    <a class="brand" href="#fleet"><span class="brand-mark" aria-hidden="true">A<span>↗</span></span><span>AGV<br><small>设备监控台</small></span></a>
+    <span class="rail-label">WORKSPACE / 01</span>
+    <nav aria-label="页面导航"><a href="#fleet">01 <span>设备总览</span></a><a href="#records">02 <span>数据记录</span></a><a href="#alarms">03 <span>告警中心</span></a></nav>
+    <div class="rail-foot"><span class="scope">SIMULATION</span><p>模拟设备 · 只读监控</p><small>独立观察通信与业务状态</small></div>
+</aside>
+<main id="main">
+    <header class="page-head"><div><p class="eyebrow">OPERATIONS / 设备运行监测</p><h1>每一次状态，都有依据。</h1><p class="subtle">查看当前观测，追溯状态变化，跟进持续异常。</p></div><div class="live-block"><span id="stream-state" class="badge neutral" role="status">正在连接</span><small>最后视图 <time id="generated-at">—</time></small><button id="reconnect" class="text-button">重新连接</button></div></header>
+    <div id="notice" class="notice" role="alert" hidden></div>
+    <div class="summary" aria-label="当前状态统计"><div><span>登记设备</span><strong id="total-count">—</strong><small>台 AGV</small></div><div><span>通信在线</span><strong id="online-count">—</strong><small>ONLINE</small></div><div><span>数据待关注</span><strong id="quality-count">—</strong><small>陈旧 / 无效 / 未知</small></div><div><span>活动告警</span><strong id="alarm-count">—</strong><small>确认不代表恢复</small></div></div>
+    <section id="fleet" class="section">
+        <div class="section-head"><div><p class="eyebrow">01 / FLEET</p><h2>设备总览</h2></div><button id="register-open" class="primary">＋ 登记设备</button></div>
+        <div class="fleet-grid"><div class="table-wrap"><table><caption class="sr-only">设备的通信、数据质量和运行状态</caption><thead><tr><th>设备</th><th>通信</th><th>质量</th><th>运行状态</th><th>电量</th><th>速度 m/s</th></tr></thead><tbody id="device-rows"><tr><td colspan="6" class="empty">正在读取设备列表…</td></tr></tbody></table></div>
+            <aside class="detail" aria-labelledby="detail-title"><p class="eyebrow">SELECTED DEVICE</p><h3 id="detail-title">选择一台设备</h3><p id="device-address" class="mono subtle">—</p><div class="detail-measures"><div><span>电量</span><strong id="detail-battery">—</strong><progress id="battery-bar" max="100" value="0" aria-label="设备电量" hidden></progress></div><div><span>速度</span><strong id="detail-speed">—</strong></div></div><dl class="facts"><dt>当前位置</dt><dd id="detail-position">—</dd><dt>目标位置</dt><dd id="detail-target">—</dd><dt>故障码</dt><dd id="detail-fault">—</dd><dt>最近响应</dt><dd id="detail-response">—</dd><dt>最近有效样本</dt><dd id="detail-fresh">—</dd></dl>
+                <form id="device-form"><fieldset id="device-fields" disabled><label for="device-name">设备名称</label><input id="device-name" name="name" maxlength="64" required><label class="check"><input id="device-enabled" type="checkbox">启用采集</label><button type="submit" class="secondary">保存设置</button></fieldset><p id="device-message" class="form-message" role="status"></p></form><p class="footnote">停用会终止观察并抑制活动告警，不改变车辆本身。</p>
+            </aside>
+        </div>
+    </section>
+    <section id="records" class="section">
+        <div class="section-head"><div><p class="eyebrow">02 / TRACE</p><h2>数据记录 <span id="record-device" class="heading-note">未选择设备</span></h2></div><div class="tabs" aria-label="记录类型"><button id="history-tab" aria-pressed="true">采样历史</button><button id="events-tab" aria-pressed="false">状态变化</button></div></div>
+        <form id="record-query" class="filters"><label>开始时间<input id="record-from" type="datetime-local" required></label><label>结束时间<input id="record-to" type="datetime-local" required></label><button class="secondary" type="submit">查询记录</button><span class="footnote">本机时区 · 最长 7 天 · 不补齐未采集数据</span></form>
+        <p id="record-error" class="form-message" role="alert"></p><div class="table-wrap"><table><caption class="sr-only">所选设备历史记录</caption><thead id="record-head"></thead><tbody id="record-rows"><tr><td class="empty">选择设备后查询记录</td></tr></tbody></table></div><div class="pagination"><span id="record-page-info">—</span><button id="record-prev" class="text-button" disabled>上一页</button><button id="record-next" class="text-button" disabled>下一页</button></div>
+    </section>
+    <section id="alarms" class="section">
+        <div class="section-head"><div><p class="eyebrow">03 / ATTENTION</p><h2>告警中心</h2></div><span class="footnote">异常恢复由新观测判断</span></div>
+        <form id="alarm-query" class="filters"><label>设备<select id="alarm-device"><option value="">全部设备</option></select></label><label>类型<select id="alarm-rule"><option value="">全部类型</option><option value="LOW_BATTERY">低电量</option><option value="DEVICE_FAULT">设备故障</option><option value="DEVICE_OFFLINE">设备离线</option><option value="DATA_STALE">数据陈旧</option></select></label><label>状态<select id="alarm-status"><option value="ACTIVE">持续中</option><option value="RECOVERED">已恢复</option><option value="SUPPRESSED">已抑制</option><option value="">全部状态</option></select></label><button class="secondary" type="submit">刷新告警</button></form>
+        <p id="alarm-error" class="form-message" role="alert"></p><div class="table-wrap"><table><caption class="sr-only">告警记录与确认操作</caption><thead><tr><th>设备 / 类型</th><th>异常状态</th><th>最近观测值</th><th>开始时间</th><th>关闭时间</th><th>未关闭时长</th><th>知悉确认</th></tr></thead><tbody id="alarm-rows"><tr><td colspan="7" class="empty">正在读取告警…</td></tr></tbody></table></div><div class="pagination"><span id="alarm-page-info">—</span><button id="alarm-prev" class="text-button" disabled>上一页</button><button id="alarm-next" class="text-button" disabled>下一页</button></div>
+    </section>
+    <footer class="page-foot"><span>AGV DEVICE MONITOR</span><span>模拟观测数据 · 不提供车辆控制</span></footer>
+</main>
+<dialog id="register-dialog"><form id="register-form"><div class="section-head"><div><p class="eyebrow">NEW DEVICE</p><h2>登记设备</h2></div><button type="button" id="register-close" class="text-button" aria-label="关闭登记窗口">关闭</button></div><p class="subtle">填写已允许访问的模拟设备连接地址。</p><div class="form-grid"><label>设备编码<input name="deviceCode" pattern="[A-Z0-9\-]{1,32}" maxlength="32" placeholder="AGV-004" required></label><label>设备名称<input name="name" maxlength="64" required></label><label class="wide">监听地址<input name="host" maxlength="128" placeholder="simulator" required></label><label>端口<input name="port" type="number" min="1" max="65535" value="1502" required></label><label>Unit ID<input name="unitId" type="number" min="1" max="247" required></label></div><label class="check"><input name="enabled" type="checkbox" checked>登记后启用采集</label><p id="register-error" class="form-message" role="alert"></p><button type="submit" class="primary">登记设备</button></form></dialog>
+</body>
+</html>

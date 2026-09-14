@@ -1,0 +1,59 @@
+services:
+  mysql:
+    image: mysql:8.4.10@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-agv_monitor}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER in .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    command: ["--default-time-zone=+00:00"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # Check application access: 验证应用账号能连接已创建的库，避免仅检查进程存在。
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_PASSWORD}\" mysql --protocol=TCP -h127.0.0.1 -u\"$${MYSQL_USER}\" \"$${MYSQL_DATABASE}\" -e 'SELECT 1' >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+  simulator:
+    build:
+      context: .
+      target: simulator
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SIMULATOR_MODBUS_BIND_ADDRESS: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "java", "-Xmx32m", "-cp", "/opt/agv", "HealthCheck", "http://127.0.0.1:8081/actuator/health/readiness"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+  backend:
+    build:
+      context: .
+      target: backend
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SPRING_PROFILES_ACTIVE: demo
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-agv_monitor}
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:?Set MYSQL_USER in .env}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${AGV_HTTP_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+        # Restart after Compose updates: 切换端口映射重建依赖后，后端重新建立数据库连接。
+        restart: true
+      simulator:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: ["CMD", "java", "-Xmx32m", "-cp", "/opt/agv", "HealthCheck", "http://127.0.0.1:8080/actuator/health/readiness"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+volumes:
+  mysql-data:

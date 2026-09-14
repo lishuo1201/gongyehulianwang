@@ -13,7 +13,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Simulation controls: 仅修改本进程的模拟数据，不是实际 AGV 的控制接口。 */
+/**
+ * Simulation controls：T04/T13/T19，供测试和演示切换六种场景，仅修改本进程内存。
+ * /sim/v1/units可用于排错，但后端不能拿此HTTP返回代替Modbus测量；否则无法验证真实协议接入。
+ * 切单车场景走PUT，reset显式恢复三台默认值和心跳；均不是实际AGV的控制或业务调度接口。
+ */
 @RestController
 @RequestMapping("/sim/v1")
 public class SimulatorController {

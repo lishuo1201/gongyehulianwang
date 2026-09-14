@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
         // Keep the fast layer database-free: 此处只验证基础上下文，数据库接线由真实 MySQL IT 验证。
-        properties = "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration",
+        properties = {"management.endpoint.health.group.readiness.include=readinessState", "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration"},
         useMainMethod = SpringBootTest.UseMainMethod.ALWAYS)
 class BackendApplicationTest {
 
